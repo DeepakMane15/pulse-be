@@ -54,7 +54,48 @@ Authorization: Bearer <access_token>
   - `404` tenant not found
   - `409` user already exists
 
+### POST `/api/tenants`
+
+- Access: Protected (`GLOBAL_ADMIN` only; super-admin)
+- Purpose: create tenant
+- Body:
+  - `name` (required)
+  - `slug` (optional)
+  - `status` (optional: `active|suspended|archived`)
+- Common errors:
+  - `400` invalid payload
+  - `403` insufficient clearance
+  - `409` tenant slug already exists
+
+### GET `/api/tenants`
+
+- Access: Protected (`GLOBAL_ADMIN` only; super-admin)
+- Purpose: list tenants
+- Response:
+  - ordered by `createdAt` descending
+
+### PATCH `/api/tenants/:tenantId`
+
+- Access: Protected (`GLOBAL_ADMIN` only; super-admin)
+- Purpose: update tenant
+- Body:
+  - one or more of `name`, `slug`, `status`
+- Common errors:
+  - `400` invalid tenantId / empty payload
+  - `403` insufficient clearance
+  - `404` tenant not found
+  - `409` tenant slug already exists
+
+### DELETE `/api/tenants/:tenantId`
+
+- Access: Protected (`GLOBAL_ADMIN` only; super-admin)
+- Purpose: delete tenant
+- Common errors:
+  - `400` invalid tenantId
+  - `403` insufficient clearance
+  - `404` tenant not found
+
 ## Swagger
 
 - Swagger route is configured at `/api/docs`.
-- Swagger includes `health`, `auth/login`, and `users/create`.
+- Swagger includes `health`, `auth/login`, `users/create`, and tenant CRUD routes.

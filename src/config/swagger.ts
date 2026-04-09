@@ -41,6 +41,23 @@ const swaggerDefinition = {
           },
           isActive: { type: 'boolean', example: true }
         }
+      },
+      CreateTenantRequest: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', example: 'Pulse' },
+          slug: { type: 'string', example: 'pulse' },
+          status: { type: 'string', enum: ['active', 'suspended', 'archived'], example: 'active' }
+        }
+      },
+      UpdateTenantRequest: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', example: 'Pulse Updated' },
+          slug: { type: 'string', example: 'pulse-updated' },
+          status: { type: 'string', enum: ['active', 'suspended', 'archived'], example: 'suspended' }
+        }
       }
     }
   },
@@ -95,6 +112,89 @@ const swaggerDefinition = {
           403: { description: 'Insufficient clearance' },
           404: { description: 'Tenant not found' },
           409: { description: 'User already exists' }
+        }
+      }
+    },
+    '/api/tenants': {
+      get: {
+        tags: ['Tenants'],
+        summary: 'Get tenants (super-admin only)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Tenants fetched' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' }
+        }
+      },
+      post: {
+        tags: ['Tenants'],
+        summary: 'Create tenant (super-admin only)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateTenantRequest' }
+            }
+          }
+        },
+        responses: {
+          201: { description: 'Tenant created' },
+          400: { description: 'Validation error' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' },
+          409: { description: 'Tenant slug already exists' }
+        }
+      }
+    },
+    '/api/tenants/{tenantId}': {
+      patch: {
+        tags: ['Tenants'],
+        summary: 'Update tenant (super-admin only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            in: 'path',
+            name: 'tenantId',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateTenantRequest' }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'Tenant updated' },
+          400: { description: 'Validation error' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' },
+          404: { description: 'Tenant not found' },
+          409: { description: 'Tenant slug already exists' }
+        }
+      },
+      delete: {
+        tags: ['Tenants'],
+        summary: 'Delete tenant (super-admin only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            in: 'path',
+            name: 'tenantId',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: { description: 'Tenant deleted' },
+          400: { description: 'Invalid tenantId' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' },
+          404: { description: 'Tenant not found' }
         }
       }
     }
