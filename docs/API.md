@@ -142,7 +142,26 @@ Authorization: Bearer <access_token>
   - `403` insufficient clearance
   - `404` tenant not found
 
+### POST `/api/videos/upload`
+
+- Access: Protected (`UPLOAD_VIDEO` clearance; editor/admin/super-admin)
+- Purpose: accept the file, write a `queue_job_logs` row (`pending`), enqueue work on RabbitMQ, respond immediately. The worker runs sensitivity (stub: always `safe`), uploads to S3, then creates the `Video` document and marks the job `completed` (or `failed` with `errorMessage`).
+- Response: `202 Accepted` with `data.jobId` — poll or subscribe (see below).
+- Content type: `multipart/form-data`
+- Form fields:
+  - `video` (required file)
+  - `title` (optional)
+  - `description` (optional)
+- Realtime: when processing finishes, the API emits `video:uploaded` over Socket.io (via an internal `video.lifecycle.events` queue from the worker).
+- Docker: API and worker must share `VIDEO_UPLOAD_TMP_DIR` (see `docker-compose` volume `upload_tmp`).
+- Common errors:
+  - `400` missing/invalid file, invalid tenant context
+  - `401` missing/invalid token
+  - `403` insufficient clearance
+  - `404` tenant not found
+  - `503` upload queue saturated
+
 ## Swagger
 
 - Swagger route is configured at `/api/docs`.
-- Swagger includes `health`, `auth/login`, full user APIs, and tenant CRUD routes.
+- Swagger includes `health`, `auth/login`, full user APIs, tenant CRUD routes, and video upload.

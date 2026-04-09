@@ -40,6 +40,9 @@ export async function getRabbitChannel(): Promise<Channel> {
 
       const nextChannel = await connection.createChannel();
       await nextChannel.assertQueue(env.RABBITMQ_VIDEO_QUEUE, { durable: true });
+      await nextChannel.assertQueue(env.RABBITMQ_VIDEO_EVENTS_QUEUE, {
+        durable: true
+      });
       channel = nextChannel;
 
       logger.info('RabbitMQ channel ready on queue %s', env.RABBITMQ_VIDEO_QUEUE);

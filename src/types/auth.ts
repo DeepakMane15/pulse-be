@@ -9,3 +9,7 @@ export type AuthUser = {
 };
 
 export type AuthenticatedRequest = Request & { user: AuthUser };
+
+export type MulterRequest = Request & {
+  file?: Express.Multer.File;
+};

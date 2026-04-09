@@ -72,6 +72,18 @@ const swaggerDefinition = {
           slug: { type: 'string', example: 'pulse-updated' },
           status: { type: 'string', enum: ['active', 'suspended', 'archived'], example: 'suspended' }
         }
+      },
+      UploadVideoRequest: {
+        type: 'object',
+        required: ['video'],
+        properties: {
+          video: {
+            type: 'string',
+            format: 'binary'
+          },
+          title: { type: 'string', example: 'Launch Demo' },
+          description: { type: 'string', example: 'Initial product walkthrough video' }
+        }
       }
     }
   },
@@ -290,6 +302,32 @@ const swaggerDefinition = {
           401: { description: 'Missing or invalid token' },
           403: { description: 'Insufficient clearance' },
           404: { description: 'Tenant not found' }
+        }
+      }
+    },
+    '/api/videos/upload': {
+      post: {
+        tags: ['Videos'],
+        summary: 'Queue video upload (worker writes S3 and creates Video record)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: { $ref: '#/components/schemas/UploadVideoRequest' }
+            }
+          }
+        },
+        responses: {
+          202: {
+            description:
+              'Upload accepted; file is queued. Track `queue_job_logs` via `jobId` until Video exists'
+          },
+          400: { description: 'Invalid file, payload, or tenant context' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' },
+          404: { description: 'Tenant not found' },
+          503: { description: 'Queue unavailable or saturated' }
         }
       }
     }

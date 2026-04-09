@@ -1,5 +1,6 @@
 import http from 'node:http';
 import app from './app.js';
+import { startLifecycleEventConsumer } from './bootstrap/lifecycleEventConsumer.js';
 import { setupSocket } from './bootstrap/socket.js';
 import { connectMongo } from './config/db.js';
 import env from './config/env.js';
@@ -12,6 +13,7 @@ async function start(): Promise<void> {
 
   const server = http.createServer(app);
   setupSocket(server);
+  await startLifecycleEventConsumer();
 
   server.listen(env.API_PORT, () => {
     logger.info('API server listening on port %d', env.API_PORT);

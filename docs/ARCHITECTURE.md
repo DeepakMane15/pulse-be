@@ -20,19 +20,18 @@
 ## Current Request Flow
 
 1. Request enters Express app.
-2. Route module dispatches to controller.
-3. Controller returns response (scaffold stage).
-4. Error middleware handles failures consistently.
+2. Route module dispatches to controller → service layer.
+3. Error middleware handles failures consistently.
 
-## Messaging Flow (Current Baseline)
+## Messaging Flow
 
-1. App establishes RabbitMQ channel.
-2. Worker starts consumer bootstrap.
-3. Retry/backoff guards startup timing for broker readiness.
+1. API and worker each connect to RabbitMQ (retry/backoff on startup).
+2. **Video upload**: API writes multipart file to `VIDEO_UPLOAD_TMP_DIR`, inserts `queue_job_logs` (`pending`), publishes payload to `RABBITMQ_VIDEO_QUEUE`, responds `202` with `jobId`.
+3. Worker consumes the queue: sets job `processing`, runs sensitivity stub (always `safe`), streams file to S3, creates `Video` on success and sets job `completed` (or `failed` + `errorMessage`).
+4. Worker publishes to `RABBITMQ_VIDEO_EVENTS_QUEUE`; API consumer forwards `video:uploaded` on Socket.io.
 
 ## Planned Evolution
 
-- Add auth + RBAC middleware flow
-- Add tenant/user/video domain models and services
-- Expand Swagger from scaffold to full endpoint contract
-- Add full processing pipeline and streaming path
+- Real sensitivity pipeline (frames + Rekognition or similar) before S3 when content may be flagged
+- HTTP range streaming from S3 with auth
+- DLQ / retries for failed queue jobs
