@@ -31,6 +31,7 @@ export async function updateTenantById(tenantId: string, input: UpdateTenantInpu
     throw new ApiError(400, 'Invalid tenantId');
   }
 
+  // Only apply fields that are explicitly sent in request payload.
   const updatePayload: UpdateTenantInput = {
     ...(input.name !== undefined ? { name: input.name.trim() } : {}),
     ...(input.slug !== undefined ? { slug: input.slug.trim() } : {}),

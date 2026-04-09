@@ -4,7 +4,7 @@ import User from '../models/user.model.js';
 import Role from '../models/role.model.js';
 import Tenant from '../models/tenant.model.js';
 import { hashPassword } from './auth.service.js';
-import type { Actor, CreateUserInput } from '../types/user.js';
+import type { Actor, CreateUserInput, UpdateUserInput } from '../types/user.js';
 import { RoleName } from '../types/role.js';
 
 export async function findUserByEmail(email: string) {
@@ -27,6 +27,7 @@ export async function createUserByActor(input: CreateUserInput, actor: Actor) {
     throw new ApiError(409, 'User with this email already exists');
   }
 
+  // Tenant admins stay tenant-bound; super-admin can target any tenant.
   const isSuperAdmin = actor.role === RoleName.SuperAdmin;
   const targetTenantId = isSuperAdmin ? input.tenantId || actor.tenantId : actor.tenantId;
 
@@ -39,6 +40,7 @@ export async function createUserByActor(input: CreateUserInput, actor: Actor) {
     throw new ApiError(404, 'Tenant not found');
   }
 
+  // Role can be resolved either by id or by stable enum name.
   const role = input.roleId
     ? await findRoleById(input.roleId)
     : input.roleName
@@ -70,4 +72,135 @@ export async function createUserByActor(input: CreateUserInput, actor: Actor) {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
+}
+
+function sanitizeUser(user: any) {
+  return {
+    id: user._id,
+    email: user.email,
+    tenantId: user.tenantId,
+    roleId: user.roleId,
+    isActive: user.isActive,
+    createdBy: user.createdBy,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
+export async function listUsersByActor(actor: Actor) {
+  // Super-admin sees all users; admin is restricted to own tenant.
+  const query =
+    actor.role === RoleName.SuperAdmin
+      ? {}
+      : {
+          tenantId: actor.tenantId
+        };
+
+  const users = await User.find(query).sort({ createdAt: -1 });
+  return users.map(sanitizeUser);
+}
+
+export async function getUserByIdForActor(userId: string, actor: Actor) {
+  if (!mongoose.isValidObjectId(userId)) {
+    throw new ApiError(400, 'Invalid userId');
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  // Prevent cross-tenant access for tenant admins.
+  if (actor.role !== RoleName.SuperAdmin && String(user.tenantId) !== actor.tenantId) {
+    throw new ApiError(403, 'Cannot access user outside your tenant');
+  }
+
+  return sanitizeUser(user);
+}
+
+export async function updateUserByActor(userId: string, input: UpdateUserInput, actor: Actor) {
+  if (!mongoose.isValidObjectId(userId)) {
+    throw new ApiError(400, 'Invalid userId');
+  }
+
+  const existingUser = await User.findById(userId);
+  if (!existingUser) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  // Prevent cross-tenant updates for tenant admins.
+  if (actor.role !== RoleName.SuperAdmin && String(existingUser.tenantId) !== actor.tenantId) {
+    throw new ApiError(403, 'Cannot update user outside your tenant');
+  }
+
+  const updatePayload: Record<string, unknown> = {};
+
+  if (input.email !== undefined) {
+    const normalizedEmail = input.email.toLowerCase().trim();
+    // Keep email unique across users.
+    const duplicate = await User.findOne({
+      email: normalizedEmail,
+      _id: { $ne: existingUser._id }
+    });
+    if (duplicate) {
+      throw new ApiError(409, 'User with this email already exists');
+    }
+    updatePayload.email = normalizedEmail;
+  }
+
+  if (input.password !== undefined) {
+    updatePayload.password = await hashPassword(input.password);
+  }
+
+  if (input.isActive !== undefined) {
+    updatePayload.isActive = input.isActive;
+  }
+
+  if (input.roleId || input.roleName) {
+    const role = input.roleId
+      ? await findRoleById(input.roleId)
+      : input.roleName
+        ? await findRoleByName(input.roleName)
+        : null;
+
+    if (!role) {
+      throw new ApiError(400, 'Valid roleId or roleName is required');
+    }
+
+    updatePayload.roleId = role._id;
+  }
+
+  if (Object.keys(updatePayload).length === 0) {
+    throw new ApiError(400, 'At least one field is required to update user');
+  }
+
+  const updatedUser = await User.findByIdAndUpdate(existingUser._id, updatePayload, {
+    new: true,
+    runValidators: true
+  });
+
+  if (!updatedUser) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  return sanitizeUser(updatedUser);
+}
+
+export async function deleteUserByActor(userId: string, actor: Actor) {
+  if (!mongoose.isValidObjectId(userId)) {
+    throw new ApiError(400, 'Invalid userId');
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  // Prevent cross-tenant deletion for tenant admins.
+  if (actor.role !== RoleName.SuperAdmin && String(user.tenantId) !== actor.tenantId) {
+    throw new ApiError(403, 'Cannot delete user outside your tenant');
+  }
+
+  await User.findByIdAndDelete(userId);
+  return { deleted: true };
 }

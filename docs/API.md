@@ -54,6 +54,53 @@ Authorization: Bearer <access_token>
   - `404` tenant not found
   - `409` user already exists
 
+### GET `/api/users`
+
+- Access: Protected (`MANAGE_USERS` clearance; admin + super-admin)
+- Purpose: list users
+- Behavior:
+  - super-admin gets users across tenants
+  - admin gets users only in own tenant
+
+### GET `/api/users/:userId`
+
+- Access: Protected (`MANAGE_USERS` clearance; admin + super-admin)
+- Purpose: get user by id
+- Behavior:
+  - super-admin can access any user
+  - admin can access only users in own tenant
+- Common errors:
+  - `400` invalid userId
+  - `403` cross-tenant access denied
+  - `404` user not found
+
+### PATCH `/api/users/:userId`
+
+- Access: Protected (`MANAGE_USERS` clearance; admin + super-admin)
+- Purpose: update user
+- Body:
+  - one or more of `email`, `password`, `roleId`, `roleName`, `isActive`
+- Behavior:
+  - super-admin can update any user
+  - admin can update only users in own tenant
+- Common errors:
+  - `400` invalid userId / empty payload
+  - `403` cross-tenant update denied
+  - `404` user not found
+  - `409` email already exists
+
+### DELETE `/api/users/:userId`
+
+- Access: Protected (`MANAGE_USERS` clearance; admin + super-admin)
+- Purpose: delete user
+- Behavior:
+  - super-admin can delete any user
+  - admin can delete only users in own tenant
+- Common errors:
+  - `400` invalid userId
+  - `403` cross-tenant delete denied
+  - `404` user not found
+
 ### POST `/api/tenants`
 
 - Access: Protected (`GLOBAL_ADMIN` only; super-admin)
@@ -98,4 +145,4 @@ Authorization: Bearer <access_token>
 ## Swagger
 
 - Swagger route is configured at `/api/docs`.
-- Swagger includes `health`, `auth/login`, `users/create`, and tenant CRUD routes.
+- Swagger includes `health`, `auth/login`, full user APIs, and tenant CRUD routes.

@@ -42,6 +42,20 @@ const swaggerDefinition = {
           isActive: { type: 'boolean', example: true }
         }
       },
+      UpdateUserRequest: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', example: 'updated.user@pulsegen.io' },
+          password: { type: 'string', example: 'newSecret123' },
+          roleId: { type: 'string', example: '67f673cc947f6074ff4285e7' },
+          roleName: {
+            type: 'string',
+            enum: RoleNameValues,
+            example: 'viewer'
+          },
+          isActive: { type: 'boolean', example: true }
+        }
+      },
       CreateTenantRequest: {
         type: 'object',
         required: ['name'],
@@ -93,6 +107,16 @@ const swaggerDefinition = {
       }
     },
     '/api/users': {
+      get: {
+        tags: ['Users'],
+        summary: 'Get users (admin and super-admin)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Users fetched' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance' }
+        }
+      },
       post: {
         tags: ['Users'],
         summary: 'Create user (admin and super-admin)',
@@ -112,6 +136,77 @@ const swaggerDefinition = {
           403: { description: 'Insufficient clearance' },
           404: { description: 'Tenant not found' },
           409: { description: 'User already exists' }
+        }
+      }
+    },
+    '/api/users/{userId}': {
+      get: {
+        tags: ['Users'],
+        summary: 'Get user by id (admin and super-admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            in: 'path',
+            name: 'userId',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: { description: 'User fetched' },
+          400: { description: 'Invalid userId' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance / cross-tenant access denied' },
+          404: { description: 'User not found' }
+        }
+      },
+      patch: {
+        tags: ['Users'],
+        summary: 'Update user (admin and super-admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            in: 'path',
+            name: 'userId',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'User updated' },
+          400: { description: 'Validation error' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance / cross-tenant update denied' },
+          404: { description: 'User not found' },
+          409: { description: 'Email already exists' }
+        }
+      },
+      delete: {
+        tags: ['Users'],
+        summary: 'Delete user (admin and super-admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            in: 'path',
+            name: 'userId',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: { description: 'User deleted' },
+          400: { description: 'Invalid userId' },
+          401: { description: 'Missing or invalid token' },
+          403: { description: 'Insufficient clearance / cross-tenant delete denied' },
+          404: { description: 'User not found' }
         }
       }
     },

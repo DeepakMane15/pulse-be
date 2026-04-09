@@ -9,6 +9,14 @@ export type CreateUserInput = {
   isActive?: boolean;
 };
 
+export type UpdateUserInput = {
+  email?: string;
+  password?: string;
+  roleId?: string;
+  roleName?: RoleName;
+  isActive?: boolean;
+};
+
 export type Actor = {
   id: string;
   tenantId?: string;

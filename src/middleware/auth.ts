@@ -13,6 +13,7 @@ export default function auth(req: Request, _res: Response, next: NextFunction): 
   try {
     const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as jwt.JwtPayload;
     const role = String(payload.role || '');
+    // Reject tokens carrying unknown role values.
     if (!RoleNameValues.includes(role as any)) {
       return next(new ApiError(401, 'Invalid role in token'));
     }
