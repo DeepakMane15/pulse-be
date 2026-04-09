@@ -13,7 +13,7 @@
     "start:api": "node dist/server.js",
     "start:worker": "node dist/workers/videoProcessor.js",
     "typecheck": "tsc --noEmit",
-    "seed": "echo \"seed scripts will be added in migration patches\""
+    "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "amqplib": "^1.0.3",

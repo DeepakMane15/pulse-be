@@ -19,6 +19,7 @@ TypeScript backend scaffold for patch-based migration from the previous JavaScri
 - `npm run build` - compile TypeScript to `dist/`
 - `npm run start:api` - run compiled API server
 - `npm run start:worker` - run compiled worker process
+- `npm run seed` - seed roles + default tenant + default super-admin
 
 ## Installation and Setup
 
@@ -48,6 +49,12 @@ docker compose logs api --tail=100
 docker compose logs worker --tail=100
 ```
 
+5. Seed base data
+
+```bash
+npm run seed
+```
+
 5. Local non-Docker run (optional)
 
 ```bash
@@ -65,6 +72,7 @@ npm run dev:api
 - Socket.io bootstrap and registry
 - Basic route/controller/service skeletons
 - Health endpoint wired
+- Unified seed script for roles + default tenant + super-admin
 
 ## Documentation Maintenance Rule
 
@@ -79,3 +87,9 @@ For every implementation patch:
 Feature sync from previous JS backend will be done in progressive patches to preserve clean commit history and visible milestones.
 
 See: `docs/MIGRATION_PATCH_PLAN.md`
+
+## Default Seed Data
+
+- Tenant: `Pulse`
+- Super-admin email: `admin@pulsegen.io`
+- Super-admin password: `admin`
