@@ -1,0 +1,43 @@
+services:
+  api:
+    build: .
+    container_name: video-platform-api
+    command: npm run start:api
+    env_file:
+      - .env.docker
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo
+      - rabbitmq
+
+  worker:
+    build: .
+    container_name: video-platform-worker
+    command: npm run start:worker
+    env_file:
+      - .env.docker
+    depends_on:
+      - mongo
+      - rabbitmq
+
+  mongo:
+    image: mongo:8
+    container_name: video-platform-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: video-platform-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  mongo_data:
+  rabbitmq_data:
