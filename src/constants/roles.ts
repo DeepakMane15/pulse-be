@@ -1,3 +1,5 @@
+import { RoleName } from '../types/role.js';
+
 export const PERMISSIONS = {
   VIEW_VIDEO: 1 << 0,
   UPLOAD_VIDEO: 1 << 1,
@@ -8,21 +10,21 @@ export const PERMISSIONS = {
   GLOBAL_ADMIN: 1 << 6
 } as const;
 
-export const ROLE_CLEARANCE = {
-  viewer: PERMISSIONS.VIEW_VIDEO,
-  editor:
+export const ROLE_CLEARANCE: Record<RoleName, number> = {
+  [RoleName.Viewer]: PERMISSIONS.VIEW_VIDEO,
+  [RoleName.Editor]:
     PERMISSIONS.VIEW_VIDEO |
     PERMISSIONS.UPLOAD_VIDEO |
     PERMISSIONS.EDIT_VIDEO |
     PERMISSIONS.DELETE_VIDEO,
-  admin:
+  [RoleName.Admin]:
     PERMISSIONS.VIEW_VIDEO |
     PERMISSIONS.UPLOAD_VIDEO |
     PERMISSIONS.EDIT_VIDEO |
     PERMISSIONS.DELETE_VIDEO |
     PERMISSIONS.MANAGE_USERS |
     PERMISSIONS.MANAGE_TENANT,
-  super_admin:
+  [RoleName.SuperAdmin]:
     PERMISSIONS.VIEW_VIDEO |
     PERMISSIONS.UPLOAD_VIDEO |
     PERMISSIONS.EDIT_VIDEO |
@@ -30,4 +32,4 @@ export const ROLE_CLEARANCE = {
     PERMISSIONS.MANAGE_USERS |
     PERMISSIONS.MANAGE_TENANT |
     PERMISSIONS.GLOBAL_ADMIN
-} as const;
+};

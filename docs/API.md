@@ -4,13 +4,11 @@ Base URL: `http://localhost:4000`
 
 ## Authentication
 
-Most APIs are planned to use:
+Protected APIs require:
 
 ```http
 Authorization: Bearer <access_token>
 ```
-
-In the first-commit baseline, only health route is actively wired.
 
 ## Implemented Endpoints (Current)
 
@@ -28,14 +26,35 @@ In the first-commit baseline, only health route is actively wired.
 }
 ```
 
-## Planned Endpoint Groups (Migration Patches)
+### POST `/api/auth/login`
 
-- Auth: register/login
-- Tenants: create/list/update/delete (super-admin)
-- Users: create/manage (admin/super-admin)
-- Videos: upload/list/processing/stream
+- Access: Public
+- Purpose: authenticate user and return access token
+- Body:
+  - `email` (required)
+  - `password` (required)
+- Success:
+  - `data.accessToken`
+  - `data.user` (id, email, tenantId, role, roleId, clearanceLevel, status/timestamps)
+
+### POST `/api/users`
+
+- Access: Protected (`MANAGE_USERS` clearance; admin + super-admin)
+- Purpose: create user under tenant scope
+- Body:
+  - `email` (required)
+  - `password` (required)
+  - `tenantId` (optional for super-admin, ignored for tenant admin)
+  - `roleId` or `roleName` (one required)
+  - `isActive` (optional)
+- Common errors:
+  - `400` invalid payload / missing role / invalid tenant
+  - `401` missing/invalid token
+  - `403` insufficient clearance
+  - `404` tenant not found
+  - `409` user already exists
 
 ## Swagger
 
 - Swagger route is configured at `/api/docs`.
-- Current spec is scaffold-level and will be expanded as endpoints are migrated.
+- Swagger includes `health`, `auth/login`, and `users/create`.
