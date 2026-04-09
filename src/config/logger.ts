@@ -17,27 +17,49 @@ const lineFormat = format.combine(
   format.splat()
 );
 
+const consoleTransport = new transports.Console({
+  format: format.combine(
+    lineFormat,
+    env.NODE_ENV === 'production'
+      ? format.json()
+      : format.combine(format.colorize(), format.simple())
+  )
+});
+
+type LogTransport =
+  | InstanceType<typeof transports.Console>
+  | InstanceType<typeof DailyRotateFile>;
+
+const logTransports: LogTransport[] = [consoleTransport];
+
+try {
+  const fileTransport = new DailyRotateFile({
+    dirname: logsDir,
+    filename: 'app-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    zippedArchive: true,
+    maxFiles: '30d',
+    format: format.combine(lineFormat, format.json())
+  });
+  fileTransport.on('error', (err: Error) => {
+    console.error('[logger] file transport error (logs still go to console): %s', err.message);
+  });
+  logTransports.push(fileTransport);
+} catch (err: any) {
+  console.error(
+    '[logger] DailyRotateFile not initialized (console only): %s',
+    err?.message || err
+  );
+}
+
 const logger = createLogger({
   level: env.NODE_ENV === 'production' ? 'info' : 'debug',
   defaultMeta: { service: env.APP_NAME },
-  transports: [
-    new transports.Console({
-      format: format.combine(
-        lineFormat,
-        env.NODE_ENV === 'production'
-          ? format.json()
-          : format.combine(format.colorize(), format.simple())
-      )
-    }),
-    new DailyRotateFile({
-      dirname: logsDir,
-      filename: 'app-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxFiles: '30d',
-      format: format.combine(lineFormat, format.json())
-    })
-  ]
+  transports: logTransports
+});
+
+logger.on('error', (err: Error) => {
+  console.error('[logger] winston error: %s', err.message);
 });
 
 export default logger;

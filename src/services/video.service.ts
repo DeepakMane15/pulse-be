@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import ApiError from '../lib/ApiError.js';
 import Tenant from '../models/tenant.model.js';
 import QueueJobLog from '../models/queueJobLog.model.js';
-import { publishVideoUploadJob } from '../queue/videoUpload.publisher.js';
+import { publishVideoAnalyzeJob } from '../queue/videoAnalyze.publisher.js';
 import type { Actor } from '../types/user.js';
 import type { UploadVideoInput } from '../types/video.js';
 
@@ -53,7 +53,7 @@ export async function queueVideoUploadByActor(
     });
 
     try {
-      await publishVideoUploadJob({
+      await publishVideoAnalyzeJob({
         jobLogId: jobLog._id.toString(),
         tempFilePath: file.path,
         tenantId: actor.tenantId.toString(),
@@ -68,7 +68,7 @@ export async function queueVideoUploadByActor(
       await fs.unlink(file.path).catch(() => {});
       await QueueJobLog.findByIdAndUpdate(jobLog._id, {
         status: 'failed',
-        errorMessage: error.message || 'Failed to enqueue upload job'
+        errorMessage: error.message || 'Failed to enqueue analyze job'
       });
       throw error;
     }

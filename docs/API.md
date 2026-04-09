@@ -145,7 +145,7 @@ Authorization: Bearer <access_token>
 ### POST `/api/videos/upload`
 
 - Access: Protected (`UPLOAD_VIDEO` clearance; editor/admin/super-admin)
-- Purpose: accept the file, write a `queue_job_logs` row (`pending`), enqueue work on RabbitMQ, respond immediately. The worker runs sensitivity (stub: always `safe`), uploads to S3, then creates the `Video` document and marks the job `completed` (or `failed` with `errorMessage`).
+- Purpose: accept the file, write a `queue_job_logs` row (`pending`), enqueue **analyze** work on RabbitMQ, respond immediately. The worker stages the file in S3, runs **Rekognition** content moderation; if safe, a second job copies to the final key and creates the `Video` document. Job statuses: `pending` → `analyzing` → `uploading` → `completed` (or `failed` / moderation block with `errorMessage`).
 - Response: `202 Accepted` with `data.jobId` — poll or subscribe (see below).
 - Content type: `multipart/form-data`
 - Form fields:
@@ -159,7 +159,7 @@ Authorization: Bearer <access_token>
   - `401` missing/invalid token
   - `403` insufficient clearance
   - `404` tenant not found
-  - `503` upload queue saturated
+  - `503` analyze queue saturated
 
 ## Swagger
 

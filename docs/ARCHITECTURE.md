@@ -26,12 +26,11 @@
 ## Messaging Flow
 
 1. API and worker each connect to RabbitMQ (retry/backoff on startup).
-2. **Video upload**: API writes multipart file to `VIDEO_UPLOAD_TMP_DIR`, inserts `queue_job_logs` (`pending`), publishes payload to `RABBITMQ_VIDEO_QUEUE`, responds `202` with `jobId`.
-3. Worker consumes the queue: sets job `processing`, runs sensitivity stub (always `safe`), streams file to S3, creates `Video` on success and sets job `completed` (or `failed` + `errorMessage`).
-4. Worker publishes to `RABBITMQ_VIDEO_EVENTS_QUEUE`; API consumer forwards `video:uploaded` on Socket.io.
+2. **Video upload**: API writes multipart file to `VIDEO_UPLOAD_TMP_DIR`, inserts `queue_job_logs` (`pending`), publishes to `RABBITMQ_VIDEO_ANALYZE_QUEUE`, responds `202` with `jobId`.
+3. **Analyze worker**: Locks job `analyzing`, uploads file to S3 **staging** prefix, runs **Rekognition** content moderation; if **flagged**, deletes staging and sets job `failed`; if **safe**, sets job `uploading` and publishes to `RABBITMQ_VIDEO_UPLOAD_QUEUE`.
+4. **Upload worker**: Copies staging object to final key, creates `Video` (same `_id` as job log), deletes staging, sets job `completed`, publishes to `RABBITMQ_VIDEO_EVENTS_QUEUE`; API consumer emits `video:uploaded` on Socket.io.
 
 ## Planned Evolution
 
-- Real sensitivity pipeline (frames + Rekognition or similar) before S3 when content may be flagged
 - HTTP range streaming from S3 with auth
-- DLQ / retries for failed queue jobs
+- DLQ / retries for failed queue jobs; tune Rekognition thresholds / label allowlists

@@ -2,14 +2,23 @@ import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import mongoose from 'mongoose';
 import logger from '../config/logger.js';
-import { buildS3ObjectUrl, uploadStreamToS3 } from '../lib/s3.js';
+import {
+  buildS3ObjectUrl,
+  copyS3ObjectWithinBucket,
+  deleteS3Object,
+  uploadStreamToS3
+} from '../lib/s3.js';
+import { classifyVideoModerationFromS3 } from '../lib/rekognition.js';
 import QueueJobLog from '../models/queueJobLog.model.js';
 import Video from '../models/video.model.js';
 import { publishVideoUploadedEvent } from '../queue/videoLifecycle.publisher.js';
+import { publishVideoS3UploadJob } from '../queue/videoS3Upload.publisher.js';
 import type { SensitivityStatus } from '../types/video.js';
 import {
-  videoUploadQueuePayloadSchema,
-  type VideoUploadQueuePayload
+  videoAnalyzeQueuePayloadSchema,
+  videoS3UploadQueuePayloadSchema,
+  type VideoAnalyzeQueuePayload,
+  type VideoS3UploadQueuePayload
 } from '../types/queueJob.js';
 
 function sanitizeName(fileName: string): string {
@@ -22,37 +31,35 @@ async function removeTempFile(filePath: string): Promise<void> {
   });
 }
 
-export async function handleVideoUploadQueueMessage(
-  raw: string
-): Promise<void> {
+export async function handleVideoAnalyzeQueueMessage(raw: string): Promise<void> {
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(raw) as unknown;
   } catch {
-    logger.error('Video upload job: invalid JSON payload');
+    logger.error('Video analyze job: invalid JSON payload');
     return;
   }
 
-  const parsed = videoUploadQueuePayloadSchema.safeParse(parsedJson);
+  const parsed = videoAnalyzeQueuePayloadSchema.safeParse(parsedJson);
   if (!parsed.success) {
-    logger.error('Video upload job: schema validation failed');
+    logger.error('Video analyze job: schema validation failed');
     return;
   }
 
-  const payload: VideoUploadQueuePayload = parsed.data;
+  const payload: VideoAnalyzeQueuePayload = parsed.data;
 
   let jobLogId: mongoose.Types.ObjectId;
   try {
     jobLogId = new mongoose.Types.ObjectId(payload.jobLogId);
   } catch {
-    logger.error('Video upload job: invalid jobLogId');
+    logger.error('Video analyze job: invalid jobLogId');
     await removeTempFile(payload.tempFilePath);
     return;
   }
 
   const existing = await QueueJobLog.findById(jobLogId);
   if (!existing) {
-    logger.warn('Video upload job: unknown jobLogId %s', payload.jobLogId);
+    logger.warn('Video analyze job: unknown jobLogId %s', payload.jobLogId);
     await removeTempFile(payload.tempFilePath);
     return;
   }
@@ -62,64 +69,192 @@ export async function handleVideoUploadQueueMessage(
     return;
   }
 
-  await QueueJobLog.findByIdAndUpdate(jobLogId, { status: 'processing' });
+  if (['analyzing', 'uploading'].includes(existing.status)) {
+    await removeTempFile(payload.tempFilePath);
+    return;
+  }
+
+  const locked = await QueueJobLog.findOneAndUpdate(
+    { _id: jobLogId, status: 'pending' },
+    { status: 'analyzing', errorMessage: null },
+    { returnDocument: 'after' }
+  );
+
+  if (!locked) {
+    await removeTempFile(payload.tempFilePath);
+    return;
+  }
+
+  let stagingS3Key: string | null = null;
 
   try {
     await fs.access(payload.tempFilePath);
 
-    // Sensitivity pipeline (future): extract frames (e.g. ffmpeg), run Rekognition or an
-    // internal classifier, then branch on safe vs flagged (quarantine, block upload, notify).
-    // For now we classify everything as safe so uploads always proceed.
-    const sensitivityStatus: SensitivityStatus = 'safe';
-
-    const videoId = new mongoose.Types.ObjectId();
     const safeName = sanitizeName(payload.originalName);
-    const s3Key = `${payload.tenantId}/${videoId.toString()}/${Date.now()}-${safeName}`;
+    stagingS3Key = `staging/${payload.tenantId}/${payload.jobLogId}/${Date.now()}-${safeName}`;
 
     const stream = createReadStream(payload.tempFilePath);
     await uploadStreamToS3({
-      key: s3Key,
+      key: stagingS3Key,
       body: stream,
       contentType: payload.mimeType
     });
 
-    const s3Url = buildS3ObjectUrl(s3Key);
+    await removeTempFile(payload.tempFilePath);
 
-    const video = await Video.create({
-      _id: videoId,
+    const moderation = await classifyVideoModerationFromS3(stagingS3Key);
+
+    if (moderation === 'flagged') {
+      await deleteS3Object(stagingS3Key).catch(() => {});
+      await QueueJobLog.findByIdAndUpdate(jobLogId, {
+        status: 'failed',
+        errorMessage: 'Video blocked by content moderation (Rekognition)'
+      });
+      return;
+    }
+
+    await QueueJobLog.findByIdAndUpdate(jobLogId, {
+      status: 'uploading',
+      errorMessage: null
+    });
+
+    await publishVideoS3UploadJob({
+      jobLogId: payload.jobLogId,
       tenantId: payload.tenantId,
       uploadedBy: payload.uploadedBy,
       title: payload.title,
       description: payload.description,
-      fileName: payload.originalName,
+      originalName: payload.originalName,
       mimeType: payload.mimeType,
       sizeBytes: payload.sizeBytes,
-      s3Url,
-      processingStatus: 'uploaded',
-      sensitivityStatus
+      stagingS3Key
     });
+  } catch (error: any) {
+    logger.error('Video analyze job failed: %s', error.message);
+    if (stagingS3Key) {
+      await deleteS3Object(stagingS3Key).catch(() => {});
+    }
+    await removeTempFile(payload.tempFilePath);
+    const log = await QueueJobLog.findById(jobLogId);
+    if (log && !['failed', 'completed'].includes(log.status)) {
+      await QueueJobLog.findByIdAndUpdate(jobLogId, {
+        status: 'failed',
+        errorMessage: error.message || 'Analyze job failed'
+      });
+    }
+    throw error;
+  }
+}
+
+export async function handleVideoS3UploadQueueMessage(raw: string): Promise<void> {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(raw) as unknown;
+  } catch {
+    logger.error('Video S3 upload job: invalid JSON payload');
+    return;
+  }
+
+  const parsed = videoS3UploadQueuePayloadSchema.safeParse(parsedJson);
+  if (!parsed.success) {
+    logger.error('Video S3 upload job: schema validation failed');
+    return;
+  }
+
+  const payload: VideoS3UploadQueuePayload = parsed.data;
+
+  let jobLogId: mongoose.Types.ObjectId;
+  try {
+    jobLogId = new mongoose.Types.ObjectId(payload.jobLogId);
+  } catch {
+    logger.error('Video S3 upload job: invalid jobLogId');
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
+    return;
+  }
+
+  const existing = await QueueJobLog.findById(jobLogId);
+  if (!existing) {
+    logger.warn('Video S3 upload job: unknown jobLogId %s', payload.jobLogId);
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
+    return;
+  }
+
+  if (existing.status === 'completed') {
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
+    return;
+  }
+
+  if (existing.status !== 'uploading') {
+    logger.warn(
+      'Video S3 upload job: expected status uploading, got %s',
+      existing.status
+    );
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
+    return;
+  }
+
+  const videoId = jobLogId;
+  const safeName = sanitizeName(payload.originalName);
+  const finalKey = `${payload.tenantId}/${videoId.toString()}/${safeName}`;
+
+  const sensitivityStatus: SensitivityStatus = 'safe';
+
+  try {
+    await copyS3ObjectWithinBucket({
+      sourceKey: payload.stagingS3Key,
+      destinationKey: finalKey
+    });
+
+    const s3Url = buildS3ObjectUrl(finalKey);
+
+    try {
+      await Video.create({
+        _id: videoId,
+        tenantId: payload.tenantId,
+        uploadedBy: payload.uploadedBy,
+        title: payload.title,
+        description: payload.description,
+        fileName: payload.originalName,
+        mimeType: payload.mimeType,
+        sizeBytes: payload.sizeBytes,
+        s3Url,
+        processingStatus: 'uploaded',
+        sensitivityStatus
+      });
+    } catch (createErr: any) {
+      if (createErr?.code === 11000) {
+        await deleteS3Object(payload.stagingS3Key).catch(() => {});
+        return;
+      }
+      await deleteS3Object(finalKey).catch(() => {});
+      await deleteS3Object(payload.stagingS3Key).catch(() => {});
+      throw createErr;
+    }
+
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
 
     await QueueJobLog.findByIdAndUpdate(jobLogId, {
       status: 'completed',
       errorMessage: null
     });
 
-    await removeTempFile(payload.tempFilePath);
-
-    await publishVideoUploadedEvent({
-      videoId: video._id,
-      tenantId: video.tenantId,
-      s3Url: video.s3Url,
-      processingStatus: video.processingStatus,
-      sensitivityStatus: video.sensitivityStatus
-    });
+    const video = await Video.findById(videoId).lean();
+    if (video) {
+      await publishVideoUploadedEvent({
+        videoId: video._id,
+        tenantId: video.tenantId,
+        s3Url: video.s3Url,
+        processingStatus: video.processingStatus,
+        sensitivityStatus: video.sensitivityStatus
+      });
+    }
   } catch (error: any) {
-    logger.error('Video upload job failed: %s', error.message);
+    logger.error('Video S3 upload job failed: %s', error.message);
     await QueueJobLog.findByIdAndUpdate(jobLogId, {
       status: 'failed',
-      errorMessage: error.message || 'Unknown error'
+      errorMessage: error.message || 'S3 finalize failed'
     });
-    await removeTempFile(payload.tempFilePath);
+    await deleteS3Object(payload.stagingS3Key).catch(() => {});
     throw error;
   }
 }

@@ -12,7 +12,7 @@ const queueJobLogSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed'],
+      enum: ['pending', 'analyzing', 'uploading', 'completed', 'failed'],
       default: 'pending',
       index: true
     },

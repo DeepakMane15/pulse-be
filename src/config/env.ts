@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
+const configDir = path.dirname(fileURLToPath(import.meta.url));
+const packageEnvPath = path.join(configDir, '../../.env');
+dotenv.config({ path: packageEnvPath });
 dotenv.config();
 
 function resolveWritableVideoUploadDir(candidate: string): string {
@@ -34,8 +38,27 @@ const schema = z.object({
   CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
   MONGO_URI: z.string().min(1, 'MONGO_URI is required'),
   RABBITMQ_URL: z.string().min(1, 'RABBITMQ_URL is required'),
-  RABBITMQ_VIDEO_QUEUE: z.string().default('video.processing.queue'),
+  RABBITMQ_VIDEO_ANALYZE_QUEUE: z.string().default('video.analyze.queue'),
+  RABBITMQ_VIDEO_UPLOAD_QUEUE: z.string().default('video.upload.queue'),
   RABBITMQ_VIDEO_EVENTS_QUEUE: z.string().default('video.lifecycle.events'),
+  REKOGNITION_ENABLED: z.preprocess((v) => {
+    if (v === undefined || v === '') return true;
+    if (typeof v === 'boolean') return v;
+    const s = String(v).toLowerCase();
+    return !['false', '0', 'no'].includes(s);
+  }, z.boolean()),
+  REKOGNITION_MIN_CONFIDENCE: z.preprocess(
+    (v) => (v === undefined || v === '' ? 55 : Number(v)),
+    z.number().min(0).max(100)
+  ),
+  REKOGNITION_POLL_INTERVAL_MS: z.preprocess(
+    (v) => (v === undefined || v === '' ? 5000 : Number(v)),
+    z.number().int().positive()
+  ),
+  REKOGNITION_MAX_WAIT_MS: z.preprocess(
+    (v) => (v === undefined || v === '' ? 900000 : Number(v)),
+    z.number().int().positive()
+  ),
   JWT_ACCESS_SECRET: z.string().min(1, 'JWT_ACCESS_SECRET is required'),
   AWS_REGION: z.string().min(1, 'AWS_REGION is required'),
   AWS_ACCESS_KEY_ID: z.string().min(1, 'AWS_ACCESS_KEY_ID is required'),

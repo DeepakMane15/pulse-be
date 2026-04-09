@@ -1,5 +1,10 @@
 import type { Readable } from 'node:stream';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client
+} from '@aws-sdk/client-s3';
 import env from '../config/env.js';
 
 const s3Client = new S3Client({
@@ -46,6 +51,36 @@ export async function uploadStreamToS3(params: {
       Body: params.body,
       ContentType: params.contentType,
       ServerSideEncryption: 'AES256'
+    })
+  );
+}
+
+/** CopySource for CopyObject: bucket + key with per-segment URI encoding. */
+export function s3CopySourceHeader(bucket: string, key: string): string {
+  return `${bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+export async function copyS3ObjectWithinBucket(params: {
+  sourceKey: string;
+  destinationKey: string;
+}): Promise<void> {
+  const bucket = env.AWS_S3_BUCKET;
+  await s3Client.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: s3CopySourceHeader(bucket, params.sourceKey),
+      Key: params.destinationKey,
+      MetadataDirective: 'COPY',
+      ServerSideEncryption: 'AES256'
+    })
+  );
+}
+
+export async function deleteS3Object(key: string): Promise<void> {
+  await s3Client.send(
+    new DeleteObjectCommand({
+      Bucket: env.AWS_S3_BUCKET,
+      Key: key
     })
   );
 }
