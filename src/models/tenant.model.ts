@@ -40,8 +40,12 @@ const tenantSchema = new Schema(
 );
 
 tenantSchema.pre('validate', function setSlug() {
-  if (!this.slug && this.name) {
-    this.slug = this.name
+  const name = typeof this.name === 'string' ? this.name : '';
+  const raw = this.slug;
+  const slugStr = typeof raw === 'string' ? raw.trim() : '';
+  const missing = !slugStr;
+  if (name && missing) {
+    this.slug = name
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9]+/g, '-')

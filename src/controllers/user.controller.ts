@@ -44,7 +44,14 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
 
   try {
     const actor = (req as AuthenticatedRequest).user;
-    const data = await listUsersByActor(actor);
+    const raw = req.query.tenantId;
+    const tenantId =
+      typeof raw === 'string'
+        ? raw
+        : Array.isArray(raw) && typeof raw[0] === 'string'
+          ? raw[0]
+          : undefined;
+    const data = await listUsersByActor(actor, { tenantId });
 
     return res.status(200).json({
       message: 'Users fetched',

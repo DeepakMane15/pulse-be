@@ -78,15 +78,27 @@ export const deleteTenant = asyncHandler(async (req: Request, res: Response) => 
   }
 });
 
-export const getTenants = asyncHandler(async (_req: Request, res: Response) => {
+function parseQueryString(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0];
+  return undefined;
+}
+
+export const getTenants = asyncHandler(async (req: Request, res: Response) => {
   logger.info('getTenants IN');
 
   try {
-    const data = await listTenants();
+    const page = Number(parseQueryString(req.query.page)) || 1;
+    const limit = Number(parseQueryString(req.query.limit)) || 20;
+    const search = parseQueryString(req.query.search);
+    const status = parseQueryString(req.query.status);
+
+    const result = await listTenants({ page, limit, search, status });
 
     return res.status(200).json({
       message: 'Tenants fetched',
-      data
+      data: result.data,
+      meta: result.meta
     });
   } catch (error: any) {
     logger.error(`getTenants failed: ${error.message}`);

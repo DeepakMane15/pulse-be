@@ -87,14 +87,23 @@ function sanitizeUser(user: any) {
   };
 }
 
-export async function listUsersByActor(actor: Actor) {
-  // Super-admin sees all users; admin is restricted to own tenant.
-  const query =
-    actor.role === RoleName.SuperAdmin
-      ? {}
-      : {
-          tenantId: actor.tenantId
-        };
+export async function listUsersByActor(
+  actor: Actor,
+  filters?: { tenantId?: string }
+) {
+  let query: Record<string, unknown>;
+
+  if (actor.role === RoleName.SuperAdmin) {
+    const tid = filters?.tenantId?.trim();
+    if (tid && mongoose.isValidObjectId(tid)) {
+      query = { tenantId: tid };
+    } else {
+      query = {};
+    }
+  } else {
+    // Tenant admins are always scoped to their tenant; ignore cross-tenant filters.
+    query = { tenantId: actor.tenantId };
+  }
 
   const users = await User.find(query)
     .populate('roleId', 'name')

@@ -9,12 +9,21 @@ export async function createTenantByActor(input: CreateTenantInput, actorId: str
     throw new ApiError(400, 'Valid tenant name is required');
   }
 
-  const payload = {
+  const slugTrim = input.slug?.trim();
+  const payload: {
+    name: string;
+    status?: CreateTenantInput['status'];
+    createdBy: string;
+    slug?: string;
+  } = {
     name: input.name.trim(),
-    slug: input.slug?.trim(),
     status: input.status,
     createdBy: actorId
   };
+  // Only set slug when provided; otherwise the model's pre-validate hook derives it from `name`.
+  if (slugTrim) {
+    payload.slug = slugTrim;
+  }
 
   try {
     const tenant = await Tenant.create(payload);
@@ -33,9 +42,11 @@ export async function updateTenantById(tenantId: string, input: UpdateTenantInpu
   }
 
   // Only apply fields that are explicitly sent in request payload.
+  const slugTrim =
+    input.slug !== undefined && typeof input.slug === 'string' ? input.slug.trim() : null;
   const updatePayload: UpdateTenantInput = {
     ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-    ...(input.slug !== undefined ? { slug: input.slug.trim() } : {}),
+    ...(slugTrim ? { slug: slugTrim } : {}),
     ...(input.status !== undefined ? { status: input.status } : {})
   };
 
@@ -75,9 +86,46 @@ export async function deleteTenantById(tenantId: string) {
   return { deleted: true };
 }
 
-export async function listTenants() {
-  const tenants = await Tenant.find({}).sort({ createdAt: -1 }).lean();
-  if (tenants.length === 0) return [];
+export type ListTenantsFilters = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+};
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export async function listTenants(filters: ListTenantsFilters = {}) {
+  const page = Math.max(1, Math.floor(Number(filters.page) || 1));
+  const rawLimit = Number(filters.limit);
+  const limit = [20, 50, 100].includes(rawLimit) ? rawLimit : 20;
+  const skip = (page - 1) * limit;
+
+  const query: Record<string, unknown> = {};
+  const st = filters.status?.trim().toLowerCase();
+  if (st === 'active' || st === 'suspended' || st === 'archived') {
+    query.status = st;
+  }
+  const search = filters.search?.trim();
+  if (search) {
+    query.name = { $regex: escapeRegex(search), $options: 'i' };
+  }
+
+  const [total, tenants] = await Promise.all([
+    Tenant.countDocuments(query),
+    Tenant.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+  if (tenants.length === 0) {
+    return {
+      data: [],
+      meta: { total, page, limit, totalPages }
+    };
+  }
 
   const ids = tenants.map((t) => t._id);
   const counts = await User.aggregate<{ _id: mongoose.Types.ObjectId; userCount: number }>([
@@ -86,8 +134,13 @@ export async function listTenants() {
   ]);
   const countByTenant = new Map(counts.map((c) => [String(c._id), c.userCount]));
 
-  return tenants.map((t) => ({
+  const data = tenants.map((t) => ({
     ...t,
     userCount: countByTenant.get(String(t._id)) ?? 0
   }));
+
+  return {
+    data,
+    meta: { total, page, limit, totalPages }
+  };
 }
