@@ -19,6 +19,12 @@ export function setupSocket(server: HttpServer): SocketIOServer {
       socket.join(`video:${videoId}`);
     });
 
+    socket.on('subscribe:job', (jobId: string) => {
+      if (typeof jobId === 'string' && jobId.length > 0 && jobId.length < 200) {
+        socket.join(`job:${jobId}`);
+      }
+    });
+
     socket.on('disconnect', () => {
       logger.info('Socket disconnected: %s', socket.id);
     });
