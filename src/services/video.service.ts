@@ -8,6 +8,13 @@ import { publishVideoAnalyzeJob } from '../queue/videoAnalyze.publisher.js';
 import type { Actor } from '../types/user.js';
 import type { UploadVideoInput } from '../types/video.js';
 
+type ListVideosOptions = {
+  page: number;
+  limit: number;
+  safety: 'all' | 'safe' | 'flagged';
+  query: string;
+};
+
 /**
  * Ensures title is unique per tenant among completed videos and in-flight upload jobs.
  * If `base` is taken, returns `base 2`, `base 3`, …
@@ -139,16 +146,86 @@ export async function queueVideoUploadByActor(
   }
 }
 
-export async function listRecentVideosForActor(actor: Actor, limit = 10) {
+function normalizeQuery(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '';
+  const total = Math.floor(seconds);
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function matchesSearch(v: any, rawQuery: string): boolean {
+  const q = normalizeQuery(rawQuery);
+  if (!q) return true;
+  const createdAt = v.createdAt ? new Date(v.createdAt) : null;
+  const dateTokens = createdAt
+    ? [
+        createdAt.toLocaleDateString().toLowerCase(),
+        createdAt.toLocaleString().toLowerCase(),
+        String(createdAt.getFullYear()),
+        String(createdAt.getMonth() + 1).padStart(2, '0'),
+        String(createdAt.getDate()).padStart(2, '0')
+      ]
+    : [];
+  const sizeMb = (Number(v.sizeBytes ?? 0) / (1024 * 1024)).toFixed(2);
+  const duration = formatDuration(v.durationSeconds).toLowerCase();
+  const haystack = [
+    String(v.title ?? ''),
+    String(v.fileName ?? ''),
+    `${sizeMb} mb`,
+    `${String(v.sizeBytes ?? 0)} bytes`,
+    duration,
+    ...dateTokens
+  ]
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+export async function listRecentVideosForActor(actor: Actor, options: ListVideosOptions) {
   if (!actor.tenantId || !mongoose.isValidObjectId(actor.tenantId)) {
     throw new ApiError(400, 'Valid tenant context is required');
   }
-  const cap = Math.min(Math.max(Number(limit) || 10, 1), 200);
-  const videos = await Video.find({ tenantId: actor.tenantId })
-    .sort({ createdAt: -1 })
-    .limit(cap)
-    .lean();
-  return videos;
+  const page = Math.max(Number(options.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 100);
+  const baseFilter: Record<string, unknown> = { tenantId: actor.tenantId };
+  if (options.safety === 'safe' || options.safety === 'flagged') {
+    baseFilter.sensitivityStatus = options.safety;
+  }
+
+  const query = options.query.trim();
+  if (!query) {
+    const [items, total] = await Promise.all([
+      Video.find(baseFilter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Video.countDocuments(baseFilter)
+    ]);
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit))
+    };
+  }
+
+  const all = await Video.find(baseFilter).sort({ createdAt: -1 }).lean();
+  const filtered = all.filter((v) => matchesSearch(v, query));
+  const total = filtered.length;
+  const start = (page - 1) * limit;
+  const items = filtered.slice(start, start + limit);
+  return {
+    items,
+    page,
+    limit,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / limit))
+  };
 }
 
 export async function getUploadJobStatusForActor(jobId: string, actor: Actor) {

@@ -11,14 +11,23 @@ import type { UploadVideoInput } from '../types/video.js';
 
 export const listVideos = asyncHandler(async (req: Request, res: Response) => {
   const actor = (req as AuthenticatedRequest).user;
-  const raw = req.query.limit;
-  const limit =
-    typeof raw === 'string'
-      ? Number(raw)
-      : Array.isArray(raw) && typeof raw[0] === 'string'
-        ? Number(raw[0])
-        : 10;
-  const data = await listRecentVideosForActor(actor, Number.isFinite(limit) ? limit : 10);
+  const readQuery = (value: unknown): string | undefined => {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+    return undefined;
+  };
+  const page = Number(readQuery(req.query.page) ?? '1');
+  const limit = Number(readQuery(req.query.limit) ?? '10');
+  const safetyRaw = readQuery(req.query.safety) ?? 'all';
+  const safety =
+    safetyRaw === 'safe' || safetyRaw === 'flagged' || safetyRaw === 'all' ? safetyRaw : 'all';
+  const q = readQuery(req.query.q) ?? '';
+  const data = await listRecentVideosForActor(actor, {
+    page: Number.isFinite(page) ? page : 1,
+    limit: Number.isFinite(limit) ? limit : 10,
+    safety,
+    query: q
+  });
   res.json({ message: 'OK', data });
 });
 
