@@ -96,8 +96,25 @@ export async function listUsersByActor(actor: Actor) {
           tenantId: actor.tenantId
         };
 
-  const users = await User.find(query).sort({ createdAt: -1 });
-  return users.map(sanitizeUser);
+  const users = await User.find(query)
+    .populate('roleId', 'name')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return users.map((u) => {
+    const roleDoc = u.roleId as { _id?: unknown; name?: string } | null;
+    return {
+      id: u._id,
+      email: u.email,
+      tenantId: u.tenantId,
+      roleId: roleDoc && typeof roleDoc === 'object' && '_id' in roleDoc ? roleDoc._id : u.roleId,
+      roleName: roleDoc && typeof roleDoc === 'object' && roleDoc.name ? roleDoc.name : null,
+      isActive: u.isActive,
+      createdBy: u.createdBy,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt
+    };
+  });
 }
 
 export async function getUserByIdForActor(userId: string, actor: Actor) {

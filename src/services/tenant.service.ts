@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import ApiError from '../lib/ApiError.js';
 import Tenant from '../models/tenant.model.js';
+import User from '../models/user.model.js';
 import type { CreateTenantInput, UpdateTenantInput } from '../types/tenant.js';
 
 export async function createTenantByActor(input: CreateTenantInput, actorId: string) {
@@ -75,5 +76,18 @@ export async function deleteTenantById(tenantId: string) {
 }
 
 export async function listTenants() {
-  return Tenant.find({}).sort({ createdAt: -1 });
+  const tenants = await Tenant.find({}).sort({ createdAt: -1 }).lean();
+  if (tenants.length === 0) return [];
+
+  const ids = tenants.map((t) => t._id);
+  const counts = await User.aggregate<{ _id: mongoose.Types.ObjectId; userCount: number }>([
+    { $match: { tenantId: { $in: ids } } },
+    { $group: { _id: '$tenantId', userCount: { $sum: 1 } } }
+  ]);
+  const countByTenant = new Map(counts.map((c) => [String(c._id), c.userCount]));
+
+  return tenants.map((t) => ({
+    ...t,
+    userCount: countByTenant.get(String(t._id)) ?? 0
+  }));
 }
