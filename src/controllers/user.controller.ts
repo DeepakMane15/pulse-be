@@ -39,23 +39,37 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+function parseQueryString(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0];
+  return undefined;
+}
+
 export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   logger.info('getUsers IN');
 
   try {
     const actor = (req as AuthenticatedRequest).user;
-    const raw = req.query.tenantId;
-    const tenantId =
-      typeof raw === 'string'
-        ? raw
-        : Array.isArray(raw) && typeof raw[0] === 'string'
-          ? raw[0]
-          : undefined;
-    const data = await listUsersByActor(actor, { tenantId });
+    const tenantId = parseQueryString(req.query.tenantId);
+    const search = parseQueryString(req.query.search);
+    const roleName = parseQueryString(req.query.roleName);
+    const isActive = parseQueryString(req.query.isActive);
+    const page = Number(parseQueryString(req.query.page)) || 1;
+    const limit = Number(parseQueryString(req.query.limit)) || 20;
+
+    const result = await listUsersByActor(actor, {
+      tenantId,
+      search,
+      roleName,
+      isActive,
+      page,
+      limit
+    });
 
     return res.status(200).json({
       message: 'Users fetched',
-      data
+      data: result.data,
+      meta: result.meta
     });
   } catch (error: any) {
     logger.error(`getUsers failed: ${error.message}`);

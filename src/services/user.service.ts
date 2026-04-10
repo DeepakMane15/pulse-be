@@ -87,29 +87,78 @@ function sanitizeUser(user: any) {
   };
 }
 
-export async function listUsersByActor(
-  actor: Actor,
-  filters?: { tenantId?: string }
-) {
-  let query: Record<string, unknown>;
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export type ListUsersFilters = {
+  tenantId?: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  roleName?: string;
+  isActive?: string;
+};
+
+export async function listUsersByActor(actor: Actor, filters: ListUsersFilters = {}) {
+  const page = Math.max(1, Math.floor(Number(filters.page) || 1));
+  const rawLimit = Number(filters.limit);
+  const limit = [20, 50, 100].includes(rawLimit) ? rawLimit : 20;
+  const skip = (page - 1) * limit;
+
+  const query: Record<string, unknown> = {};
 
   if (actor.role === RoleName.SuperAdmin) {
-    const tid = filters?.tenantId?.trim();
+    const tid = filters.tenantId?.trim();
     if (tid && mongoose.isValidObjectId(tid)) {
-      query = { tenantId: tid };
-    } else {
-      query = {};
+      query.tenantId = tid;
     }
   } else {
-    // Tenant admins are always scoped to their tenant; ignore cross-tenant filters.
-    query = { tenantId: actor.tenantId };
+    query.tenantId = actor.tenantId;
   }
 
-  const users = await User.find(query)
-    .populate('roleId', 'name')
-    .sort({ createdAt: -1 })
-    .lean();
+  const search = filters.search?.trim();
+  if (search) {
+    query.email = { $regex: escapeRegex(search), $options: 'i' };
+  }
 
+  const activeRaw = filters.isActive?.trim().toLowerCase();
+  if (activeRaw === 'true' || activeRaw === 'false') {
+    query.isActive = activeRaw === 'true';
+  }
+
+  const roleFilter = filters.roleName?.trim().toLowerCase();
+  if (roleFilter) {
+    const role = await Role.findOne({ name: roleFilter });
+    if (!role) {
+      return {
+        data: [],
+        meta: { total: 0, page, limit, totalPages: 0 }
+      };
+    }
+    query.roleId = role._id;
+  }
+
+  const [total, users] = await Promise.all([
+    User.countDocuments(query),
+    User.find(query)
+      .populate('roleId', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+  const data = mapUserRows(users);
+
+  return {
+    data,
+    meta: { total, page, limit, totalPages }
+  };
+}
+
+function mapUserRows(users: any[]) {
   return users.map((u) => {
     const roleDoc = u.roleId as { _id?: unknown; name?: string } | null;
     return {
