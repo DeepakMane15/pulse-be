@@ -5,14 +5,11 @@ import {
   createWorkerConsumerChannels,
   getRabbitChannel
 } from '../config/rabbitmq.js';
-import {
-  handleVideoAnalyzeQueueMessage,
-  handleVideoS3UploadQueueMessage
-} from '../services/videoUploadJob.service.js';
+import { handleVideoAnalyzeQueueMessage } from '../services/videoUploadJob.service.js';
 
 export async function startConsumers(): Promise<void> {
   await getRabbitChannel();
-  const { analyzeChannel, uploadChannel } = await createWorkerConsumerChannels();
+  const { analyzeChannel } = await createWorkerConsumerChannels();
 
   await analyzeChannel.consume(
     env.RABBITMQ_VIDEO_ANALYZE_QUEUE,
@@ -29,20 +26,5 @@ export async function startConsumers(): Promise<void> {
     }
   );
 
-  await uploadChannel.consume(
-    env.RABBITMQ_VIDEO_UPLOAD_QUEUE,
-    async (message: ConsumeMessage | null) => {
-      if (!message) return;
-      const raw = message.content.toString('utf8');
-      try {
-        await handleVideoS3UploadQueueMessage(raw);
-        uploadChannel.ack(message);
-      } catch (error: any) {
-        logger.error(`Upload consumer failed: ${error.message}`);
-        uploadChannel.nack(message, false, false);
-      }
-    }
-  );
-
-  logger.info('RabbitMQ consumers started (analyze + upload, separate channels)');
+  logger.info('RabbitMQ consumer started (video analyze pipeline: S3 + Rekognition + Video row)');
 }

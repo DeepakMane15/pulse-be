@@ -15,11 +15,7 @@ async function startWorker(): Promise<void> {
   await connectMongo();
   await getRabbitChannel();
   await startConsumers();
-  logger.info(
-    'Worker started (analyze=%s upload=%s)',
-    env.RABBITMQ_VIDEO_ANALYZE_QUEUE,
-    env.RABBITMQ_VIDEO_UPLOAD_QUEUE
-  );
+  logger.info('Worker started (analyze queue=%s)', env.RABBITMQ_VIDEO_ANALYZE_QUEUE);
 }
 
 startWorker().catch((error: Error) => {

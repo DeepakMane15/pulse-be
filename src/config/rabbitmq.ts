@@ -90,13 +90,9 @@ export async function getRabbitChannel(): Promise<Channel> {
   return publishChannel;
 }
 
-/**
- * Worker only: separate channels so long-running analyze (Rekognition) does not share
- * prefetch with upload — avoids starving delivery and “stuck until restart” behavior.
- */
+/** Worker only: single consumer for upload + Rekognition + DB finalize (long-running jobs). */
 export async function createWorkerConsumerChannels(): Promise<{
   analyzeChannel: Channel;
-  uploadChannel: Channel;
 }> {
   const conn = await getRabbitConnection();
 
@@ -107,16 +103,7 @@ export async function createWorkerConsumerChannels(): Promise<{
   await analyzeChannel.assertQueue(env.RABBITMQ_VIDEO_ANALYZE_QUEUE, { durable: true });
   analyzeChannel.prefetch(1);
 
-  const uploadChannel = await conn.createChannel();
-  uploadChannel.on('error', (err: Error) => {
-    logger.error('RabbitMQ upload consumer channel error: %s', err.message);
-  });
-  await uploadChannel.assertQueue(env.RABBITMQ_VIDEO_UPLOAD_QUEUE, { durable: true });
-  uploadChannel.prefetch(5);
+  logger.info('RabbitMQ worker consumer channel ready (analyze prefetch=1)');
 
-  logger.info(
-    'RabbitMQ worker consumer channels ready (analyze prefetch=1, upload prefetch=5)'
-  );
-
-  return { analyzeChannel, uploadChannel };
+  return { analyzeChannel };
 }
