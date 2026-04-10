@@ -3,9 +3,51 @@ import mongoose from 'mongoose';
 import ApiError from '../lib/ApiError.js';
 import Tenant from '../models/tenant.model.js';
 import QueueJobLog from '../models/queueJobLog.model.js';
+import Video from '../models/video.model.js';
 import { publishVideoAnalyzeJob } from '../queue/videoAnalyze.publisher.js';
 import type { Actor } from '../types/user.js';
 import type { UploadVideoInput } from '../types/video.js';
+
+/**
+ * Ensures title is unique per tenant among completed videos and in-flight upload jobs.
+ * If `base` is taken, returns `base 2`, `base 3`, …
+ */
+async function resolveUniqueVideoTitle(
+  tenantId: mongoose.Types.ObjectId | string,
+  desired: string
+): Promise<string> {
+  const base = desired.trim();
+  if (!base) {
+    throw new ApiError(400, 'Title is required');
+  }
+
+  const [videoRows, activeJobRows] = await Promise.all([
+    Video.find({ tenantId }).select('title').lean(),
+    QueueJobLog.find({
+      tenantId,
+      status: { $in: ['pending', 'analyzing', 'uploading'] }
+    })
+      .select('title')
+      .lean()
+  ]);
+
+  const used = new Set<string>();
+  for (const v of videoRows) {
+    if (v.title != null && String(v.title).trim()) {
+      used.add(String(v.title).trim());
+    }
+  }
+  for (const l of activeJobRows) {
+    if (l.title != null && String(l.title).trim()) {
+      used.add(String(l.title).trim());
+    }
+  }
+
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base} ${n}`)) n += 1;
+  return `${base} ${n}`;
+}
 
 export async function queueVideoUploadByActor(
   input: UploadVideoInput,
@@ -36,7 +78,14 @@ export async function queueVideoUploadByActor(
     throw new ApiError(404, 'Tenant not found');
   }
 
-  const title = input.title?.trim() || null;
+  const requestedTitle = input.title?.trim() ?? '';
+  if (!requestedTitle) {
+    await fs.unlink(file.path).catch(() => {});
+    throw new ApiError(400, 'Title is required');
+  }
+
+  const title = await resolveUniqueVideoTitle(actor.tenantId, requestedTitle);
+  const titleAdjusted = title !== requestedTitle;
   const description = input.description?.trim() || null;
 
   try {
@@ -76,6 +125,9 @@ export async function queueVideoUploadByActor(
     return {
       jobId: jobLog._id,
       status: jobLog.status,
+      title: jobLog.title,
+      titleAdjusted,
+      requestedTitle,
       fileName: jobLog.fileName,
       mimeType: jobLog.mimeType,
       sizeBytes: jobLog.sizeBytes,
@@ -85,4 +137,38 @@ export async function queueVideoUploadByActor(
     await fs.unlink(file.path).catch(() => {});
     throw error;
   }
+}
+
+export async function listRecentVideosForActor(actor: Actor, limit = 10) {
+  if (!actor.tenantId || !mongoose.isValidObjectId(actor.tenantId)) {
+    throw new ApiError(400, 'Valid tenant context is required');
+  }
+  const cap = Math.min(Math.max(Number(limit) || 10, 1), 200);
+  const videos = await Video.find({ tenantId: actor.tenantId })
+    .sort({ createdAt: -1 })
+    .limit(cap)
+    .lean();
+  return videos;
+}
+
+export async function getUploadJobStatusForActor(jobId: string, actor: Actor) {
+  if (!mongoose.isValidObjectId(jobId)) {
+    throw new ApiError(400, 'Invalid job id');
+  }
+  if (!actor.tenantId || !mongoose.isValidObjectId(actor.tenantId)) {
+    throw new ApiError(400, 'Valid tenant context is required');
+  }
+  const log = await QueueJobLog.findById(jobId).lean();
+  if (!log || String(log.tenantId) !== actor.tenantId) {
+    throw new ApiError(404, 'Job not found');
+  }
+  return {
+    jobId: log._id.toString(),
+    status: log.status,
+    fileName: log.fileName,
+    title: log.title,
+    errorMessage: log.errorMessage,
+    createdAt: log.createdAt,
+    updatedAt: log.updatedAt
+  };
 }

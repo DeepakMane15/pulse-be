@@ -5,7 +5,7 @@ import multer from 'multer';
 import { Router } from 'express';
 import { PERMISSIONS } from '../constants/roles.js';
 import env from '../config/env.js';
-import { uploadVideo } from '../controllers/video.controller.js';
+import { getUploadJob, listVideos, uploadVideo } from '../controllers/video.controller.js';
 import auth from '../middleware/auth.js';
 import requireClearance from '../middleware/requireClearance.js';
 
@@ -28,6 +28,17 @@ const upload = multer({
 });
 
 router.use(auth);
-router.post('/upload', requireClearance(PERMISSIONS.UPLOAD_VIDEO), upload.single('video'), uploadVideo);
+router.get('/', requireClearance(PERMISSIONS.VIEW_VIDEO), listVideos);
+router.get(
+  '/upload-jobs/:jobId',
+  requireClearance(PERMISSIONS.VIEW_VIDEO),
+  getUploadJob
+);
+router.post(
+  '/upload',
+  requireClearance(PERMISSIONS.UPLOAD_VIDEO),
+  upload.single('video'),
+  uploadVideo
+);
 
 export default router;

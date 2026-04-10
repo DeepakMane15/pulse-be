@@ -11,7 +11,10 @@ import {
 import { classifyVideoModerationFromS3 } from '../lib/rekognition.js';
 import QueueJobLog from '../models/queueJobLog.model.js';
 import Video from '../models/video.model.js';
-import { publishVideoUploadedEvent } from '../queue/videoLifecycle.publisher.js';
+import {
+  publishVideoJobUpdateEvent,
+  publishVideoUploadedEvent
+} from '../queue/videoLifecycle.publisher.js';
 import { publishVideoS3UploadJob } from '../queue/videoS3Upload.publisher.js';
 import type { SensitivityStatus } from '../types/video.js';
 import {
@@ -85,6 +88,14 @@ export async function handleVideoAnalyzeQueueMessage(raw: string): Promise<void>
     return;
   }
 
+  await publishVideoJobUpdateEvent({
+    jobId: jobLogId.toString(),
+    tenantId: payload.tenantId,
+    status: 'analyzing',
+    progress: 30,
+    errorMessage: null
+  });
+
   let stagingS3Key: string | null = null;
 
   try {
@@ -110,11 +121,26 @@ export async function handleVideoAnalyzeQueueMessage(raw: string): Promise<void>
         status: 'failed',
         errorMessage: 'Video blocked by content moderation (Rekognition)'
       });
+      await publishVideoJobUpdateEvent({
+        jobId: jobLogId.toString(),
+        tenantId: payload.tenantId,
+        status: 'failed',
+        progress: 0,
+        errorMessage: 'Video blocked by content moderation (Rekognition)'
+      });
       return;
     }
 
     await QueueJobLog.findByIdAndUpdate(jobLogId, {
       status: 'uploading',
+      errorMessage: null
+    });
+
+    await publishVideoJobUpdateEvent({
+      jobId: jobLogId.toString(),
+      tenantId: payload.tenantId,
+      status: 'uploading',
+      progress: 70,
       errorMessage: null
     });
 
@@ -139,6 +165,13 @@ export async function handleVideoAnalyzeQueueMessage(raw: string): Promise<void>
     if (log && !['failed', 'completed'].includes(log.status)) {
       await QueueJobLog.findByIdAndUpdate(jobLogId, {
         status: 'failed',
+        errorMessage: error.message || 'Analyze job failed'
+      });
+      await publishVideoJobUpdateEvent({
+        jobId: jobLogId.toString(),
+        tenantId: payload.tenantId,
+        status: 'failed',
+        progress: 0,
         errorMessage: error.message || 'Analyze job failed'
       });
     }
@@ -252,6 +285,13 @@ export async function handleVideoS3UploadQueueMessage(raw: string): Promise<void
     logger.error('Video S3 upload job failed: %s', error.message);
     await QueueJobLog.findByIdAndUpdate(jobLogId, {
       status: 'failed',
+      errorMessage: error.message || 'S3 finalize failed'
+    });
+    await publishVideoJobUpdateEvent({
+      jobId: jobLogId.toString(),
+      tenantId: payload.tenantId,
+      status: 'failed',
+      progress: 0,
       errorMessage: error.message || 'S3 finalize failed'
     });
     await deleteS3Object(payload.stagingS3Key).catch(() => {});
