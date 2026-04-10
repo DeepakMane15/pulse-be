@@ -46,6 +46,12 @@ const videoSchema = new Schema(
       unique: true,
       trim: true
     },
+    /** JPEG poster extracted from the video (worker + ffmpeg); optional for legacy rows. */
+    thumbnailUrl: {
+      type: String,
+      default: null,
+      trim: true
+    },
     processingStatus: {
       type: String,
       enum: ['uploaded', 'processing', 'completed', 'failed'],

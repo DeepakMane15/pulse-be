@@ -1,7 +1,11 @@
 import type { Readable } from 'node:stream';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client
 } from '@aws-sdk/client-s3';
@@ -83,4 +87,17 @@ export async function deleteS3Object(key: string): Promise<void> {
       Key: key
     })
   );
+}
+
+export async function downloadS3ObjectToFile(key: string, filePath: string): Promise<void> {
+  const out = await s3Client.send(
+    new GetObjectCommand({
+      Bucket: env.AWS_S3_BUCKET,
+      Key: key
+    })
+  );
+  if (!out.Body) {
+    throw new Error('Empty S3 object body');
+  }
+  await pipeline(out.Body as Readable, createWriteStream(filePath));
 }

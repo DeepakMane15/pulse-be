@@ -8,6 +8,7 @@ import {
   deleteS3Object,
   uploadStreamToS3
 } from '../lib/s3.js';
+import { generateAndStoreVideoPoster } from '../lib/videoPoster.js';
 import { classifyVideoModerationFromS3 } from '../lib/rekognition.js';
 import QueueJobLog from '../models/queueJobLog.model.js';
 import Video from '../models/video.model.js';
@@ -266,6 +267,12 @@ export async function handleVideoS3UploadQueueMessage(raw: string): Promise<void
 
     await deleteS3Object(payload.stagingS3Key).catch(() => {});
 
+    const posterKey = `${payload.tenantId}/${videoId.toString()}/poster.jpg`;
+    const thumbnailUrl = await generateAndStoreVideoPoster(finalKey, posterKey);
+    if (thumbnailUrl) {
+      await Video.findByIdAndUpdate(videoId, { thumbnailUrl });
+    }
+
     await QueueJobLog.findByIdAndUpdate(jobLogId, {
       status: 'completed',
       errorMessage: null
@@ -277,6 +284,7 @@ export async function handleVideoS3UploadQueueMessage(raw: string): Promise<void
         videoId: video._id,
         tenantId: video.tenantId,
         s3Url: video.s3Url,
+        thumbnailUrl: video.thumbnailUrl,
         processingStatus: video.processingStatus,
         sensitivityStatus: video.sensitivityStatus
       });
