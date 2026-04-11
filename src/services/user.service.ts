@@ -143,6 +143,7 @@ export async function listUsersByActor(actor: Actor, filters: ListUsersFilters =
     User.countDocuments(query),
     User.find(query)
       .populate('roleId', 'name')
+      .populate('tenantId', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -161,10 +162,27 @@ export async function listUsersByActor(actor: Actor, filters: ListUsersFilters =
 function mapUserRows(users: any[]) {
   return users.map((u) => {
     const roleDoc = u.roleId as { _id?: unknown; name?: string } | null;
+    const tenantRef = u.tenantId as
+      | string
+      | { _id?: unknown; name?: string }
+      | null
+      | undefined;
+    let tenantId: string;
+    let tenantName: string | null = null;
+    if (tenantRef && typeof tenantRef === 'object' && '_id' in tenantRef) {
+      tenantId = String(tenantRef._id);
+      tenantName =
+        tenantRef.name != null && String(tenantRef.name).trim() !== ''
+          ? String(tenantRef.name)
+          : null;
+    } else {
+      tenantId = String(u.tenantId);
+    }
     return {
       id: u._id,
       email: u.email,
-      tenantId: u.tenantId,
+      tenantId,
+      tenantName,
       roleId: roleDoc && typeof roleDoc === 'object' && '_id' in roleDoc ? roleDoc._id : u.roleId,
       roleName: roleDoc && typeof roleDoc === 'object' && roleDoc.name ? roleDoc.name : null,
       isActive: u.isActive,
